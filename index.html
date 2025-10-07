@@ -35,138 +35,108 @@
     public-key="23ec6d15-2e34-4eab-a53f-37caa2df2bc9"
     assistant-id="2a6efbda-d66c-48f3-acc6-ef6a5e819c8e"
     mode="voice"
-    theme="light"
-    base-bg-color="#ffffff"
-    accent-color="#14B8A6"
-    cta-button-color="#ffffff"
-    cta-button-text-color="#000000"
-    border-radius="large"
-    size="full"
-    position="bottom-right"
-    title="TALK WITH AI"
-    start-button-text="Start"
-    end-button-text="End Chat"
-    chat-first-message="Hey, How can I help you today?"
-    chat-placeholder="Type your message..."
-    voice-show-transcript="true"
-    consent-required="true"
-    consent-title="Terms and conditions"
-    consent-content="By clicking 'Agree,' and each time I interact with this AI agent, I consent to the recording, storage, and sharing of my communications with third-party service providers, and as otherwise described in our Terms of Service."
-    consent-storage-key="vapi_widget_consent">
+    theme="light">
   </vapi-widget>
 
-  <!-- Widget embed (for <vapi-widget>) -->
-  <script src="https://cdn.jsdelivr.net/gh/VapiAI/html-script-tag@latest/dist/assets/index.js" async defer></script>
+  <!-- Widget embed -->
+  <script src="https://cdn.jsdelivr.net/gh/VapiAI/html-script-tag@latest/dist/assets/index.js"></script>
 
-  <!-- Vapi Web SDK (global Vapi object) -->
+  <!-- Vapi Web SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@vapi-ai/web/dist/index.min.js"></script>
 
-  <!-- Your custom code -->
+  <!-- Custom code (must come last, after DOM + SDK) -->
   <script>
-    window.addEventListener("load", () => {
-      if (typeof Vapi === "undefined") {
-        console.error("❌ Vapi SDK not loaded");
+    // ========= CONFIG =========
+    const CONFIG = {
+      PUBLIC_KEY: "23ec6d15-2e34-4eab-a53f-37caa2df2bc9",
+      ASSISTANT_ID: "2a6efbda-d66c-48f3-acc6-ef6a5e819c8e",
+      N8N_FEED_URL: "https://poppasmurf.app.n8n.cloud/webhook/tts-feed",
+      N8N_ACK_URL: "https://poppasmurf.app.n8n.cloud/webhook/tts-ack",
+      POLL_MS: 2000
+    };
+    // ==========================
+
+    const logEl = document.getElementById("log");
+    const statusEl = document.getElementById("status");
+    const armBtn = document.getElementById("armBtn");
+    const testBtn = document.getElementById("testBtn");
+
+    if (typeof Vapi === "undefined") {
+      console.error("❌ Vapi SDK not loaded");
+    }
+
+    const vapi = new Vapi(CONFIG.PUBLIC_KEY);
+    let armed = false;
+    let polling = false;
+    let lastId = null;
+
+    function log(...args){
+      const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
+      logEl.textContent += (logEl.textContent ? "\n" : "") + line;
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log("[VOICE]", ...args);
+    }
+
+    async function armVoice(){
+      if (armed) return;
+      armed = true;
+      statusEl.textContent = "Status: starting…";
+      try {
+        await vapi.start(CONFIG.ASSISTANT_ID);
+        statusEl.textContent = "Status: armed (listening & ready)";
+        log("✅ Voice armed: session started");
+        beginPolling();
+      } catch (e){
+        armed = false;
+        statusEl.textContent = "Status: error starting";
+        log("❌ Failed to start Vapi session:", e);
+      }
+    }
+
+    function speak(text){
+      if (!armed){
+        log("⚠️ Not armed yet. Click 'Arm Voice' once.");
         return;
       }
-
-      // ========= CONFIG =========
-      const CONFIG = {
-        PUBLIC_KEY: "23ec6d15-2e34-4eab-a53f-37caa2df2bc9",
-        ASSISTANT_ID: "2a6efbda-d66c-48f3-acc6-ef6a5e819c8e",
-        N8N_FEED_URL: "https://poppasmurf.app.n8n.cloud/webhook/tts-feed",
-        N8N_ACK_URL: "https://poppasmurf.app.n8n.cloud/webhook/tts-ack",
-        POLL_MS: 2000
-      };
-      // ==========================
-
-      const logEl = document.getElementById("log");
-      const statusEl = document.getElementById("status");
-      const armBtn = document.getElementById("armBtn");
-      const testBtn = document.getElementById("testBtn");
-
-      const vapi = new Vapi(CONFIG.PUBLIC_KEY);
-      let armed = false;
-      let polling = false;
-      let lastId = null;
-
-      function log(...args){
-        const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
-        logEl.textContent += (logEl.textContent ? "\n" : "") + line;
-        logEl.scrollTop = logEl.scrollHeight;
-        console.log("[VOICE]", ...args);
+      if (!text || !text.trim()) return;
+      try {
+        vapi.send({ type: "input_text", text });
+        log("➡️ Injected line:", text);
+      } catch(e){
+        log("❌ Failed to inject text:", e);
       }
+    }
 
-      // Start the live voice session (requires one user gesture)
-      async function armVoice(){
-        if (armed) return;
-        armed = true;
-        statusEl.textContent = "Status: starting…";
-        try {
-          await vapi.start(CONFIG.ASSISTANT_ID);
-          statusEl.textContent = "Status: armed (listening & ready)";
-          log("✅ Voice armed: session started");
-          beginPolling();
-        } catch (e){
-          armed = false;
-          statusEl.textContent = "Status: error starting";
-          log("❌ Failed to start Vapi session:", e);
-        }
-      }
-
-      // Send a text line into the running session -> assistant will speak
-      function speak(text){
-        if (!armed){
-          log("⚠️ Not armed yet. Click 'Arm Voice' once.");
-          return;
-        }
-        if (!text || !text.trim()) return;
-        try {
-          vapi.send({ type: "input_text", text });
-          log("➡️ Injected line:", text);
-        } catch(e){
-          log("❌ Failed to inject text:", e);
-        }
-      }
-
-      // Poll n8n for new lines to speak
-      async function pollOnce(){
-        console.log("Polling feed:", CONFIG.N8N_FEED_URL);
-        try {
-          const res = await fetch(CONFIG.N8N_FEED_URL, { cache: "no-store" });
-          if (!res.ok) throw new Error(`Feed HTTP ${res.status}`);
-          const data = await res.json();
-          console.log("Feed data:", data);
-          if (data && data.id && data.text && data.id !== lastId){
-            lastId = data.id;
-            log("📥 From n8n:", data);
-            speak(data.text);
-            if (CONFIG.N8N_ACK_URL){
-              fetch(CONFIG.N8N_ACK_URL + "?id=" + encodeURIComponent(data.id)).catch(()=>{});
-            }
+    async function pollOnce(){
+      console.log("Polling feed:", CONFIG.N8N_FEED_URL);
+      try {
+        const res = await fetch(CONFIG.N8N_FEED_URL, { cache: "no-store" });
+        if (!res.ok) throw new Error(`Feed HTTP ${res.status}`);
+        const data = await res.json();
+        console.log("Feed data:", data);
+        if (data && data.id && data.text && data.id !== lastId){
+          lastId = data.id;
+          log("📥 From n8n:", data);
+          speak(data.text);
+          if (CONFIG.N8N_ACK_URL){
+            fetch(CONFIG.N8N_ACK_URL + "?id=" + encodeURIComponent(data.id)).catch(()=>{});
           }
-        } catch(e){
-          log("⚠️ Poll error:", e.message || e);
         }
+      } catch(e){
+        log("⚠️ Poll error:", e.message || e);
       }
+    }
 
-      function beginPolling(){
-        if (polling) return;
-        polling = true;
-        log(`🛰️ Polling n8n every ${CONFIG.POLL_MS}ms`);
-        setInterval(pollOnce, CONFIG.POLL_MS);
-      }
+    function beginPolling(){
+      if (polling) return;
+      polling = true;
+      log(`🛰️ Polling n8n every ${CONFIG.POLL_MS}ms`);
+      setInterval(pollOnce, CONFIG.POLL_MS);
+    }
 
-      // ---------- UI bindings ----------
-      armBtn.addEventListener("click", armVoice);
-      testBtn.addEventListener("click", () => speak("This is a test line from the livestream bridge."));
-
-      // ---------- Widget debug events ----------
-      window.addEventListener("vapi:ready", (e) => log("Widget ready", e.detail));
-      window.addEventListener("vapi:call-start", () => log("Widget call-start"));
-      window.addEventListener("vapi:call-end", () => log("Widget call-end"));
-      window.addEventListener("vapi:message", (e) => log("Widget message", e.detail?.type || "", e.detail));
-      window.addEventListener("vapi:error", (e) => log("Widget error", e.detail));
-    });
+    // Attach button listeners
+    armBtn.addEventListener("click", armVoice);
+    testBtn.addEventListener("click", () => speak("This is a test line from the livestream bridge."));
   </script>
 </body>
 </html>
