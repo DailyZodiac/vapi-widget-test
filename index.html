@@ -41,8 +41,8 @@
   <!-- Widget embed -->
   <script src="https://cdn.jsdelivr.net/gh/VapiAI/html-script-tag@latest/dist/assets/index.js"></script>
 
-  <!-- Vapi Web SDK -->
-  <script src="https://cdn.jsdelivr.net/npm/@vapi-ai/web/dist/index.min.js"></script>
+  <!-- ✅ Vapi Web SDK (UMD build for browsers) -->
+  <script src="https://unpkg.com/@vapi-ai/web/dist/index.umd.js"></script>
 
   <!-- Custom code -->
   <script>
@@ -66,6 +66,7 @@
       console.log("[VOICE]", ...args);
     }
 
+    // ✅ Make sure SDK loaded
     if (typeof Vapi === "undefined") {
       log("❌ Vapi SDK not loaded");
     }
@@ -83,12 +84,12 @@
       try {
         await vapi.start(CONFIG.ASSISTANT_ID);
         statusEl.textContent = "Status: armed (ready)";
-        log("✅ Voice armed");
+        log("✅ Voice armed: session started");
         beginPolling();
       } catch(e){
         armed = false;
         statusEl.textContent = "Status: error starting";
-        log("❌ Error starting:", e);
+        log("❌ Failed to start Vapi session:", e);
       }
     }
 
@@ -98,21 +99,24 @@
         log("⚠️ Not armed yet.");
         return;
       }
+      if (!text || !text.trim()) return;
       vapi.send({ type:"input_text", text });
       log("➡️ Injected line:", text);
     }
 
     async function pollOnce(){
+      console.log("Polling feed:", CONFIG.N8N_FEED_URL);
       try {
         const res = await fetch(CONFIG.N8N_FEED_URL, { cache:"no-store" });
         if (!res.ok) throw new Error(`Feed HTTP ${res.status}`);
         const data = await res.json();
+        console.log("Feed data:", data);
         if (data && data.id && data.text && data.id !== lastId){
           lastId = data.id;
           log("📥 From n8n:", data);
           speak(data.text);
           if (CONFIG.N8N_ACK_URL){
-            fetch(CONFIG.N8N_ACK_URL+"?id="+encodeURIComponent(data.id));
+            fetch(CONFIG.N8N_ACK_URL+"?id="+encodeURIComponent(data.id)).catch(()=>{});
           }
         }
       } catch(e){ log("⚠️ Poll error:", e.message); }
@@ -126,7 +130,7 @@
     }
 
     armBtn.addEventListener("click", armVoice);
-    testBtn.addEventListener("click", () => speak("This is a test line."));
+    testBtn.addEventListener("click", () => speak("This is a test line from the livestream bridge."));
   </script>
 </body>
 </html>
