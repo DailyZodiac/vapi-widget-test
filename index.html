@@ -55,23 +55,21 @@
     consent-storage-key="vapi_widget_consent">
   </vapi-widget>
 
-  <!-- Correct embed script for the custom element -->
+  <!-- Widget embed -->
   <script
     src="https://cdn.jsdelivr.net/gh/VapiAI/html-script-tag@latest/dist/assets/index.js"
     async defer>
   </script>
 
-  <!-- Web SDK so we can inject text programmatically -->
-  <script type="module">
-    import Vapi from "https://cdn.jsdelivr.net/npm/@vapi-ai/web/dist/index.min.js";
+  <!-- Vapi Web SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@vapi-ai/web/dist/index.min.js"></script>
 
+  <script>
     // ========= CONFIG =========
     const CONFIG = {
       PUBLIC_KEY: "23ec6d15-2e34-4eab-a53f-37caa2df2bc9",
       ASSISTANT_ID: "2a6efbda-d66c-48f3-acc6-ef6a5e819c8e",
-      // n8n should expose a simple JSON feed like: { id: "unique-id", text: "Say this..." }
       N8N_FEED_URL: "https://poppasmurf.app.n8n.cloud/webhook/tts-feed",
-      // optional: acknowledge consumption so n8n can clear it
       N8N_ACK_URL: "https://poppasmurf.app.n8n.cloud/webhook/tts-ack",
       POLL_MS: 2000
     };
@@ -119,7 +117,6 @@
       }
       if (!text || !text.trim()) return;
       try {
-        // Realtime input to the assistant (most Vapi builds support this shape)
         vapi.send({ type: "input_text", text });
         log("➡️ Injected line:", text);
       } catch(e){
@@ -129,16 +126,16 @@
 
     // Poll n8n for new lines to speak
     async function pollOnce(){
+      console.log("Polling feed:", CONFIG.N8N_FEED_URL);
       try {
         const res = await fetch(CONFIG.N8N_FEED_URL, { cache: "no-store" });
         if (!res.ok) throw new Error(`Feed HTTP ${res.status}`);
-        const data = await res.json(); // expect { id, text } or {}
+        const data = await res.json();
+        console.log("Feed data:", data);
         if (data && data.id && data.text && data.id !== lastId){
           lastId = data.id;
           log("📥 From n8n:", data);
           speak(data.text);
-
-          // optional ack
           if (CONFIG.N8N_ACK_URL){
             fetch(CONFIG.N8N_ACK_URL + "?id=" + encodeURIComponent(data.id)).catch(()=>{});
           }
@@ -159,7 +156,7 @@
     armBtn.addEventListener("click", armVoice);
     testBtn.addEventListener("click", () => speak("This is a test line from the livestream bridge."));
 
-    // ---------- Widget debug events (optional) ----------
+    // ---------- Widget debug events ----------
     window.addEventListener("vapi:ready", (e) => log("Widget ready", e.detail));
     window.addEventListener("vapi:call-start", () => log("Widget call-start"));
     window.addEventListener("vapi:call-end", () => log("Widget call-end"));
