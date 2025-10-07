@@ -1,41 +1,63 @@
-<vapi-widget
-  public-key="23ec6d15-2e34-4eab-a53f-37caa2df2bc9"
-  assistant-id="2a6efbda-d66c-48f3-acc6-ef6a5e819c8e"
-  mode="voice"
-  theme="dark"
-  voice-show-transcript="true"
-></vapi-widget>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>OCR → TTS Demo</title>
+</head>
+<body>
+  <h2>OCR → TTS Live</h2>
+  <div id="log">Waiting for feed…</div>
 
-<script src="https://unpkg.com/@vapi-ai/client-sdk-react/dist/embed/widget.umd.js" async></script>
+  <script>
+    const FEED_URL = "https://poppasmurf.app.n8n.cloud/webhook/tts-feed";
+    const OPENAI_KEY = "YOUR_OPENAI_API_KEY"; // 🔑 Replace with your real key
+    let lastId = null;
 
-<script>
-  let widgetInstance;
+    async function playTTS(text) {
+      const res = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + OPENAI_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini-tts",
+          voice: "verse",
+          input: text
+        })
+      });
 
-  // 1) Wait until widget is ready
-  window.addEventListener("vapi-ready", (event) => {
-    widgetInstance = event.detail;
-    console.log("✅ Vapi widget ready", widgetInstance);
-  });
+      const arrayBuffer = await res.arrayBuffer();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const buffer = await ctx.decodeAudioData(arrayBuffer);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.start();
 
-  // 2) Poll your n8n feed every 5 seconds
-  async function pollFeed() {
-    try {
-      const res = await fetch("https://poppasmurf.app.n8n.cloud/webhook-test/tts-feed");
-      if (!res.ok) throw new Error("Feed request failed");
-
-      const data = await res.json();
-      console.log("📥 OCR Feed Response:", data);
-
-      // Example: your feed returns { id: "...", text: "..." }
-      if (data.text && widgetInstance) {
-        widgetInstance.send({ type: "input_text", text: data.text });
-        console.log("➡️ Sent OCR text into widget:", data.text);
-      }
-    } catch (err) {
-      console.error("Feed polling error:", err);
+      document.getElementById("log").innerHTML += "<div>🔊 Spoke: " + text + "</div>";
     }
-  }
 
-  // 3) Start polling every 5s
-  setInterval(pollFeed, 5000);
-</script>
+    async function pollFeed() {
+      try {
+        const res = await fetch(FEED_URL, { cache: "no-store" });
+        if (!res.ok) throw new Error("Feed HTTP " + res.status);
+        const data = await res.json();
+
+        if (data && data.id && data.text && data.id !== lastId) {
+          lastId = data.id;
+          console.log("📥 New OCR:", data);
+          await playTTS(data.text);
+
+          // Optionally: call ack to clear it
+          fetch("https://poppasmurf.app.n8n.cloud/webhook/tts-ack?id=" + encodeURIComponent(data.id));
+        }
+      } catch (err) {
+        console.error("Poll error:", err);
+      }
+    }
+
+    setInterval(pollFeed, 3000); // poll every 3s
+  </script>
+</body>
+</html>
