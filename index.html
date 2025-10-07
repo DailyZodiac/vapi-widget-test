@@ -22,7 +22,7 @@
   <header>
     <div style="font-weight:700;font-size:18px;">🎙️ OctoBot Livestream Voice</div>
     <button id="armBtn" class="arm">Arm Voice (click once)</button>
-    <button id="testBtn" class="test" title="Sends a demo line">Send Test Line</button>
+    <button id="testBtn" class="test">Send Test Line</button>
     <div id="status" class="status">Status: idle</div>
   </header>
 
@@ -44,9 +44,8 @@
   <!-- Vapi Web SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@vapi-ai/web/dist/index.min.js"></script>
 
-  <!-- Custom code (must come last, after DOM + SDK) -->
+  <!-- Custom code -->
   <script>
-    // ========= CONFIG =========
     const CONFIG = {
       PUBLIC_KEY: "23ec6d15-2e34-4eab-a53f-37caa2df2bc9",
       ASSISTANT_ID: "2a6efbda-d66c-48f3-acc6-ef6a5e819c8e",
@@ -54,15 +53,21 @@
       N8N_ACK_URL: "https://poppasmurf.app.n8n.cloud/webhook/tts-ack",
       POLL_MS: 2000
     };
-    // ==========================
 
     const logEl = document.getElementById("log");
     const statusEl = document.getElementById("status");
     const armBtn = document.getElementById("armBtn");
     const testBtn = document.getElementById("testBtn");
 
+    function log(...args){
+      const line = args.join(" ");
+      logEl.textContent += (logEl.textContent ? "\n" : "") + line;
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log("[VOICE]", ...args);
+    }
+
     if (typeof Vapi === "undefined") {
-      console.error("❌ Vapi SDK not loaded");
+      log("❌ Vapi SDK not loaded");
     }
 
     const vapi = new Vapi(CONFIG.PUBLIC_KEY);
@@ -70,73 +75,58 @@
     let polling = false;
     let lastId = null;
 
-    function log(...args){
-      const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
-      logEl.textContent += (logEl.textContent ? "\n" : "") + line;
-      logEl.scrollTop = logEl.scrollHeight;
-      console.log("[VOICE]", ...args);
-    }
-
     async function armVoice(){
+      log("Arm button clicked");
       if (armed) return;
       armed = true;
       statusEl.textContent = "Status: starting…";
       try {
         await vapi.start(CONFIG.ASSISTANT_ID);
-        statusEl.textContent = "Status: armed (listening & ready)";
-        log("✅ Voice armed: session started");
+        statusEl.textContent = "Status: armed (ready)";
+        log("✅ Voice armed");
         beginPolling();
-      } catch (e){
+      } catch(e){
         armed = false;
         statusEl.textContent = "Status: error starting";
-        log("❌ Failed to start Vapi session:", e);
+        log("❌ Error starting:", e);
       }
     }
 
     function speak(text){
+      log("Test button clicked");
       if (!armed){
-        log("⚠️ Not armed yet. Click 'Arm Voice' once.");
+        log("⚠️ Not armed yet.");
         return;
       }
-      if (!text || !text.trim()) return;
-      try {
-        vapi.send({ type: "input_text", text });
-        log("➡️ Injected line:", text);
-      } catch(e){
-        log("❌ Failed to inject text:", e);
-      }
+      vapi.send({ type:"input_text", text });
+      log("➡️ Injected line:", text);
     }
 
     async function pollOnce(){
-      console.log("Polling feed:", CONFIG.N8N_FEED_URL);
       try {
-        const res = await fetch(CONFIG.N8N_FEED_URL, { cache: "no-store" });
+        const res = await fetch(CONFIG.N8N_FEED_URL, { cache:"no-store" });
         if (!res.ok) throw new Error(`Feed HTTP ${res.status}`);
         const data = await res.json();
-        console.log("Feed data:", data);
         if (data && data.id && data.text && data.id !== lastId){
           lastId = data.id;
           log("📥 From n8n:", data);
           speak(data.text);
           if (CONFIG.N8N_ACK_URL){
-            fetch(CONFIG.N8N_ACK_URL + "?id=" + encodeURIComponent(data.id)).catch(()=>{});
+            fetch(CONFIG.N8N_ACK_URL+"?id="+encodeURIComponent(data.id));
           }
         }
-      } catch(e){
-        log("⚠️ Poll error:", e.message || e);
-      }
+      } catch(e){ log("⚠️ Poll error:", e.message); }
     }
 
     function beginPolling(){
       if (polling) return;
       polling = true;
-      log(`🛰️ Polling n8n every ${CONFIG.POLL_MS}ms`);
+      log(`🛰️ Polling every ${CONFIG.POLL_MS}ms`);
       setInterval(pollOnce, CONFIG.POLL_MS);
     }
 
-    // Attach button listeners
     armBtn.addEventListener("click", armVoice);
-    testBtn.addEventListener("click", () => speak("This is a test line from the livestream bridge."));
+    testBtn.addEventListener("click", () => speak("This is a test line."));
   </script>
 </body>
 </html>
