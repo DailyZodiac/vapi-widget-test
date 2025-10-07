@@ -1,63 +1,33 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <title>OCR → TTS Demo</title>
+  <meta charset="utf-8"/>
+  <title>OCR → ElevenLabs Voice</title>
 </head>
 <body>
-  <h2>OCR → TTS Live</h2>
-  <div id="log">Waiting for feed…</div>
+  <h2>OCR → Voice via ElevenLabs + n8n</h2>
+  <button onclick="pollFeed()">Play Latest</button>
+  <div id="log"></div>
 
   <script>
     const FEED_URL = "https://poppasmurf.app.n8n.cloud/webhook/tts-feed";
-    const OPENAI_KEY = "YOUR_OPENAI_API_KEY"; // 🔑 Replace with your real key
-    let lastId = null;
-
-    async function playTTS(text) {
-      const res = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        headers: {
-          "Authorization": "Bearer " + OPENAI_KEY,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini-tts",
-          voice: "verse",
-          input: text
-        })
-      });
-
-      const arrayBuffer = await res.arrayBuffer();
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const buffer = await ctx.decodeAudioData(arrayBuffer);
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(ctx.destination);
-      source.start();
-
-      document.getElementById("log").innerHTML += "<div>🔊 Spoke: " + text + "</div>";
-    }
 
     async function pollFeed() {
       try {
-        const res = await fetch(FEED_URL, { cache: "no-store" });
-        if (!res.ok) throw new Error("Feed HTTP " + res.status);
-        const data = await res.json();
+        const res = await fetch(FEED_URL);
+        if (!res.ok) throw new Error("HTTP " + res.status);
 
-        if (data && data.id && data.text && data.id !== lastId) {
-          lastId = data.id;
-          console.log("📥 New OCR:", data);
-          await playTTS(data.text);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
 
-          // Optionally: call ack to clear it
-          fetch("https://poppasmurf.app.n8n.cloud/webhook/tts-ack?id=" + encodeURIComponent(data.id));
-        }
+        const audio = new Audio(url);
+        audio.play();
+
+        document.getElementById("log").innerHTML += "<div>🎙️ New audio played</div>";
       } catch (err) {
-        console.error("Poll error:", err);
+        console.error(err);
       }
     }
-
-    setInterval(pollFeed, 3000); // poll every 3s
   </script>
 </body>
 </html>
